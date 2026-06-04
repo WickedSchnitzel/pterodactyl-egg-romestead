@@ -1,0 +1,136 @@
+{
+    "_comment": "Romestead Dedicated Server Egg for Pterodactyl",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": ""
+    },
+    "exported_at": "2026-06-04T19:56:00+02:00",
+    "name": "Romestead",
+    "author": "pterodactyl@admin.com",
+    "description": "Romestead Dedicated Server (.NET 8, Steam App ID: 4763510). Requires a Steam account that owns the game.",
+    "features": {},
+    "docker_images": {
+        "ghcr.io/pterodactyl/yolks:debian": "ghcr.io/pterodactyl/yolks:debian"
+    },
+    "file_denylist": [],
+    "startup": "/home/container/start.sh",
+    "config": {
+        "files": "{}",
+        "startup": "{\"done\":\"Server started\"}",
+        "logs": "{}",
+        "stop": "^C",
+        "egg": {
+            "steam": true,
+            "steam_appid": "4763510"
+        }
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\n# Romestead Installation Script\n# Steam App ID: 4763510\n# IMPORTANT: Steam Guard MUST be disabled for this account!\n# Set STEAM_USERNAME and STEAM_PASSWORD in the Startup tab before installing.\n\napt -y update\napt -y --no-install-recommends install curl lib32gcc-s1 ca-certificates openssl libicu-dev wget\n\n# Configure Microsoft package repository for .NET 8\nwget https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb -O packages-microsoft-prod.deb\ndpkg -i packages-microsoft-prod.deb\nrm packages-microsoft-prod.deb\napt -y update\n\n# Install .NET 8 Runtime and copy to server directory\napt -y install dotnet-runtime-8.0\nmkdir -p /mnt/server/.dotnet\ncp -r /usr/share/dotnet/* /mnt/server/.dotnet/\n\n# Copy required libraries into server directory for runtime container\nmkdir -p /mnt/server/lib\ncp /usr/lib/x86_64-linux-gnu/libicu*.so* /mnt/server/lib/ 2>/dev/null || true\ncp /usr/lib/x86_64-linux-gnu/libstdc++.so* /mnt/server/lib/ 2>/dev/null || true\ncp /usr/lib/x86_64-linux-gnu/libgcc_s.so* /mnt/server/lib/ 2>/dev/null || true\n\n# Install SteamCMD\nmkdir -p /mnt/server/steamcmd\ncd /mnt/server/steamcmd\n\ncurl -sSL -o steamcmd.tar.gz https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\ntar -xzvf steamcmd.tar.gz -C /mnt/server/steamcmd\nrm -rf steamcmd.tar.gz\n\n# SteamCMD requires 32-bit libraries\ndpkg --add-architecture i386\napt -y update\napt -y install lib32gcc-s1\n\n# Ensure server directory is writable\nmkdir -p /mnt/server\nchmod -R 777 /mnt/server || true\nrm -f /mnt/server/appmanifest_4763510.acf 2>/dev/null || true\n\n# Run SteamCMD and download the server\n# NOTE: You MUST provide STEAM_USERNAME and STEAM_PASSWORD that owns Romestead\nif [ -z \"$STEAM_USERNAME\" ] || [ -z \"$STEAM_PASSWORD\" ]; then\n    echo \"ERROR: STEAM_USERNAME and STEAM_PASSWORD must be set. Romestead requires a Steam account that owns the game.\"\n    exit 1\nfi\n\nexport HOME=/mnt/server\n./steamcmd.sh +force_install_dir /mnt/server +login \"$STEAM_USERNAME\" \"$STEAM_PASSWORD\" +app_update 4763510 validate +quit\n\nif [ $? -ne 0 ]; then\n    echo \"ERROR: SteamCMD failed to install Romestead.\"\n    exit 1\nfi\n\n# Create startup script that reads env vars and generates config.json\ncat > /mnt/server/start.sh << 'SCRIPTEND'\n#!/bin/bash\ncd /home/container\nrm -f /home/container/config.json\nprintf '{\"AutoStartWorldName\":\"%s\",\"AutoCreateAndLoadWorld\":%s,\"AutoCreateWorldSize\":%s,\"AutoCreateWorldSeed\":%s,\"Password\":\"%s\",\"Port\":%s,\"MaxPlayers\":%s,\"EnableCheats\":%s}\\n' \"$WORLD_NAME\" \"$AUTOCREATE_WORLD\" \"$WORLD_SIZE\" \"$WORLD_SEED\" \"$GAME_PASSWORD\" \"$GAME_PORT\" \"$MAX_PLAYERS\" \"$ENABLE_CHEATS\" > /home/container/config.json\ncat /home/container/config.json\nexport HOME=/home/container\nexport XDG_CONFIG_HOME=/home/container/.config\nexport XDG_DATA_HOME=/home/container/.local/share\nmkdir -p /home/container/.config\nmkdir -p /home/container/.local/share\nmkdir -p /home/container/GameAnalytics\nexport LD_LIBRARY_PATH=/home/container/lib\n# .NET GC tuning\nexport DOTNET_GCHighMemPercent=80\nexport DOTNET_GCServer=0\nexec /home/container/.dotnet/dotnet Server.dll\nSCRIPTEND\nchmod +x /mnt/server/start.sh\n\necho \"Romestead server installation completed.\"",
+            "container": "ghcr.io/pterodactyl/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Steam Username",
+            "description": "Your Steam username (must own Romestead). Required for installation.",
+            "env_variable": "STEAM_USERNAME",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Steam Password",
+            "description": "Your Steam password. Required for installation. Steam Guard must be disabled!",
+            "env_variable": "STEAM_PASSWORD",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "string|max:128",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Port",
+            "description": "The UDP port the server will listen on. Default: 8050",
+            "env_variable": "GAME_PORT",
+            "default_value": "8050",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|between:1024,65535",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Password",
+            "description": "Optional password to protect the server.",
+            "env_variable": "GAME_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Max Players",
+            "description": "Maximum number of players allowed. Default: 8",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "8",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|between:1,100",
+            "field_type": "text"
+        },
+        {
+            "name": "World Name",
+            "description": "Name of the world to auto-start. Must not be empty (early EA builds crash with empty name).",
+            "env_variable": "WORLD_NAME",
+            "default_value": "Conquest of Blocks",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto Create And Load World",
+            "description": "Automatically create and load a world if AutoStartWorldName is empty. Default: true",
+            "env_variable": "AUTOCREATE_WORLD",
+            "default_value": "true",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:true,false",
+            "field_type": "text"
+        },
+        {
+            "name": "World Size",
+            "description": "Size of the auto-created world (1-3). Default: 1",
+            "env_variable": "WORLD_SIZE",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|numeric|between:1,3",
+            "field_type": "text"
+        },
+        {
+            "name": "World Seed",
+            "description": "Seed for world generation. Use 'null' for random. Default: null",
+            "env_variable": "WORLD_SEED",
+            "default_value": "null",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "string|max:20",
+            "field_type": "text"
+        },
+        {
+            "name": "Enable Cheats",
+            "description": "Enable cheats on the server. Default: false",
+            "env_variable": "ENABLE_CHEATS",
+            "default_value": "false",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:true,false",
+            "field_type": "text"
+        }
+    ]
+}
