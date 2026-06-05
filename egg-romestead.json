@@ -6,7 +6,7 @@
     },
     "exported_at": "2026-06-04T19:56:00+02:00",
     "name": "Romestead",
-    "author": "pterodactyl@admin.com",
+    "author": "Kai S. Effelsberg",
     "description": "Romestead Dedicated Server (.NET 8, Steam App ID: 4763510). Requires a Steam account that owns the game.",
     "features": {},
     "docker_images": {
@@ -86,7 +86,7 @@
             "name": "World Name",
             "description": "Name of the world to auto-start. Must not be empty (early EA builds crash with empty name).",
             "env_variable": "WORLD_NAME",
-            "default_value": "Conquest of Blocks",
+            "default_value": "Romestead World",
             "user_viewable": true,
             "user_editable": true,
             "rules": "required|string|max:64",
